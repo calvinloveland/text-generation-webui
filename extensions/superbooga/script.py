@@ -13,6 +13,7 @@ import gradio as gr
 
 import extensions.superbooga.parameters as parameters
 
+from modules import chat
 from modules.logging_colors import logger
 from modules import shared
 
@@ -164,11 +165,72 @@ def _apply_settings(optimization_steps, time_power, time_steepness, significant_
 
 
 def custom_generate_chat_prompt(user_input, state, **kwargs):
-    return custom_generate_chat_prompt_internal(user_input, state, collector, **kwargs)
+    global chat_collector
+
+    # get history as being modified when using regenerate.
+    history = kwargs['history']
+
+    if state['mode'] == 'instruct':
+        results = collector.get_sorted(user_input, n_results=params['chunk_count'])
+        additional_context = '\nYour reply should be based on the context below:\n\n' + '\n'.join(results)
+        user_input += additional_context
+    else:
+
+        def make_single_exchange(id_):
+            output = ''
+            output += f"{state['name1']}: {history['internal'][id_][0]}\n"
+            output += f"{state['name2']}: {history['internal'][id_][1]}\n"
+            return output
+
+        if len(history['internal']) > params['chunk_count'] and user_input != '':
+            chunks = []
+            hist_size = len(history['internal'])
+            for i in range(hist_size - 1):
+                chunks.append(make_single_exchange(i))
+
+            add_chunks_to_collector(chunks, chat_collector)
+            query = '\n'.join(history['internal'][-1] + [user_input])
+            try:
+                best_ids = chat_collector.get_ids_sorted(query, n_results=params['chunk_count'], n_initial=params['chunk_count_initial'], time_weight=params['time_weight'])
+                additional_context = '\n'
+                for id_ in best_ids:
+                    if history['internal'][id_][0] != '<|BEGIN-VISIBLE-CHAT|>':
+                        additional_context += make_single_exchange(id_)
+
+                logger.warning(f'Adding the following new context:\n{additional_context}')
+                state['context'] = state['context'].strip() + '\n' + additional_context
+                kwargs['history'] = {
+                    'internal': [history['internal'][i] for i in range(hist_size) if i not in best_ids],
+                    'visible': ''
+                }
+            except RuntimeError:
+                logger.error("Couldn't query the database, moving on...")
+
+    return chat.generate_chat_prompt(user_input, state, **kwargs)
 
 
-def input_modifier(string):
-    return input_modifier_internal(string, collector)
+def remove_special_tokens(string):
+    pattern = r'(<\|begin-user-input\|>|<\|end-user-input\|>|<\|injection-point\|>)'
+    return re.sub(pattern, '', string)
+
+
+def input_modifier(string, state, is_chat=False):
+    if is_chat:
+        return string
+
+    # Find the user input
+    pattern = re.compile(r"<\|begin-user-input\|>(.*?)<\|end-user-input\|>", re.DOTALL)
+    match = re.search(pattern, string)
+    if match:
+        user_input = match.group(1).strip()
+
+        # Get the most similar chunks
+        results = collector.get_sorted(user_input, n_results=params['chunk_count'])
+
+        # Make the injection
+        string = string.replace('<|injection-point|>', '\n'.join(results))
+
+    return remove_special_tokens(string)
 
 
 def ui():
