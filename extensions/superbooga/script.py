@@ -13,6 +13,8 @@ from .benchmark import benchmark
 import extensions.superbooga.parameters as parameters
 
 params = {
+    "display_name": "Superbooga",
+    'is_tab': True,
     'chunk_count': 5,
     'chunk_count_initial': 10,
     'time_weight': 0,
