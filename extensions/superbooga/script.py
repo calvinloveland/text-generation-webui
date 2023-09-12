@@ -3,12 +3,14 @@ import textwrap
 
 import gradio as gr
 from bs4 import BeautifulSoup
-
+from pathlib import Path
 from modules import chat
 from modules.logging_colors import logger
 
 from .chromadb import add_chunks_to_collector, make_collector
 from .download_urls import download_urls
+from .benchmark import benchmark
+import extensions.superbooga.parameters as parameters
 
 params = {
     'chunk_count': 5,
@@ -161,6 +163,10 @@ def input_modifier(string, state, is_chat=False):
 
     return remove_special_tokens(string)
 
+def _begin_benchmark():
+    score, max_score = benchmark(Path("extensions/superbooga/benchmark_texts/questions.json"), collector)
+    return f'**Score**: {score}/{max_score}'
+
 
 def ui():
     with gr.Accordion("Click for more information...", open=False):
@@ -251,8 +257,12 @@ def ui():
 
             chunk_len = gr.Number(value=params['chunk_length'], label='Chunk length', info='In characters, not tokens. This value is used when you click on "Load data".')
             chunk_sep = gr.Textbox(value=params['chunk_separator'], label='Chunk separator', info='Used to manually split chunks. Manually split chunks longer than chunk length are split again. This value is used when you click on "Load data".')
+            with gr.Tab("Benchmark"):
+                benchmark_button = gr.Button('Benchmark')
         with gr.Column():
             last_updated = gr.Markdown()
+
+    benchmark_button.click(_begin_benchmark, [], last_updated, show_progress=True)
 
     update_data.click(feed_data_into_collector, [data_input, chunk_len, chunk_sep], last_updated, show_progress=False)
     update_url.click(feed_url_into_collector, [url_input, chunk_len, chunk_sep, strong_cleanup, threads], last_updated, show_progress=False)
