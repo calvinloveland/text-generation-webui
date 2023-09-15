@@ -90,6 +90,32 @@ def _create_chunks_with_context(corpus, chunk_len, context_left, context_right):
     return chunks, chunks_with_context, chunk_with_context_start_indices
 
 
+def _clear_chunks(data_chunks, data_chunks_with_context, data_chunk_starting_indices):
+    distinct_data_chunks = []
+    distinct_data_chunks_with_context = []
+    distinct_data_chunk_starting_indices = []
+
+    seen_chunks = dict()
+
+    for chunk, context, index in zip(data_chunks, data_chunks_with_context, data_chunk_starting_indices):
+        # Skip the chunk if it does not contain any alphanumeric characters
+        if not any(char.isalnum() for char in chunk):
+            continue
+
+        seen_chunk_start = seen_chunks.get(chunk)
+        if seen_chunk_start:
+            # If we've already seen this exact chunk, and the context around it it very close to the seen chunk, then skip it.
+            if abs(seen_chunk_start-index) < parameters.get_delta_start():
+                continue
+
+        distinct_data_chunks.append(chunk)
+        distinct_data_chunks_with_context.append(context)
+        distinct_data_chunk_starting_indices.append(index)
+
+        seen_chunks[chunk] = index
+
+    return distinct_data_chunks, distinct_data_chunks_with_context, distinct_data_chunk_starting_indices
+
 def process_and_add_to_collector(corpus: str, collector: ChromaCollector, clear_collector_before_adding: bool, metadata: dict):
     # Defining variables
     chunk_lens = [int(len.strip()) for len in parameters.get_chunk_len().split(',')]
@@ -159,4 +185,5 @@ def process_and_add_to_collector(corpus: str, collector: ChromaCollector, clear_
 
     if clear_collector_before_adding:
         collector.clear()
-    collector.add(data_chunks, data_chunks_with_context, data_chunk_starting_indices, [metadata]*len(data_chunks) if metadata is not None else None)
+    # collector.add(data_chunks, data_chunks_with_context, data_chunk_starting_indices, [metadata]*len(data_chunks) if metadata is not None else None)
+    collector.add(data_chunks)
